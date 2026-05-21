@@ -1,24 +1,20 @@
-// Simple client-side admin auth using localStorage.
-// NOTE: For real security, replace with Lovable Cloud auth + roles.
+"use client";
 
-const ADMIN_USERNAME = "admin";
-const ADMIN_PASSWORD = "admin123";
-const AUTH_KEY = "logohub_admin_auth";
+import { createClient } from "@/lib/supabase/client";
 
-export const login = (username: string, password: string): boolean => {
-  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    localStorage.setItem(AUTH_KEY, "true");
-    window.dispatchEvent(new Event("auth-change"));
-    return true;
-  }
-  return false;
-};
+export async function signIn(email: string, password: string) {
+  const supabase = createClient();
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  return !error;
+}
 
-export const logout = () => {
-  localStorage.removeItem(AUTH_KEY);
-  window.dispatchEvent(new Event("auth-change"));
-};
+export async function signOut() {
+  const supabase = createClient();
+  await supabase.auth.signOut();
+}
 
-export const isAuthenticated = (): boolean => {
-  return localStorage.getItem(AUTH_KEY) === "true";
-};
+export async function getCurrentUser() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}

@@ -1,4 +1,7 @@
+"use client";
+
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Phone, Mail, MapPin, Facebook, Instagram, Linkedin, Send, Building2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -6,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import Header from "@/components/Header";
-import { getCategories } from "@/lib/logoData";
+import { fetchCategories } from "@/lib/logos";
 import { useToast } from "@/hooks/use-toast";
 
 const CONTACT_INFO = {
@@ -21,7 +24,8 @@ const CONTACT_INFO = {
 
 const Contact = () => {
   const { toast } = useToast();
-  const categories = getCategories().filter((c) => c !== "الكل");
+  const { data: allCategories = ["الكل"] } = useQuery({ queryKey: ["categories"], queryFn: fetchCategories });
+  const categories = allCategories.filter((c) => c !== "الكل");
 
   const [form, setForm] = useState({
     phone: "",

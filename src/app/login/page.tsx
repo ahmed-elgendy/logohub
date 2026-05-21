@@ -1,36 +1,42 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Lock, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Lock, Mail } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import Header from "@/components/Header";
-import { login, isAuthenticated } from "@/lib/auth";
+import { signIn } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/client";
 
 const Login = () => {
-  const navigate = useNavigate();
-  const [username, setUsername] = useState("");
+  const router = useRouter();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated()) navigate("/admin", { replace: true });
-  }, [navigate]);
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) router.replace("/admin");
+    });
+  }, [router]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      if (login(username.trim(), password)) {
-        toast.success("تم تسجيل الدخول بنجاح");
-        navigate("/admin", { replace: true });
-      } else {
-        toast.error("اسم المستخدم أو كلمة المرور غير صحيحة");
-      }
-      setLoading(false);
-    }, 300);
+    const ok = await signIn(email.trim(), password);
+    if (ok) {
+      toast.success("تم تسجيل الدخول بنجاح");
+      router.replace("/admin");
+      router.refresh();
+    } else {
+      toast.error("البريد الإلكتروني أو كلمة المرور غير صحيحة");
+    }
+    setLoading(false);
   };
 
   return (
@@ -65,15 +71,15 @@ const Login = () => {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="username">اسم المستخدم</Label>
+                <Label htmlFor="email">البريد الإلكتروني</Label>
                 <div className="relative">
-                  <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    id="username"
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="admin"
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="admin@example.com"
                     required
                     className="pr-10 h-11"
                   />

@@ -1,3 +1,5 @@
+"use client";
+
 import { MessageCircle } from "lucide-react";
 
 const WHATSAPP_NUMBER = "01012345678";

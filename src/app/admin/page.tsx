@@ -1,4 +1,7 @@
+"use client";
+
 import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Star, StarOff, Pencil, Upload, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -10,24 +13,33 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import Header from "@/components/Header";
-import { getLogos, saveLogos, getCategories, saveCategories, type Logo } from "@/lib/logoData";
+import { type Logo } from "@/lib/logoData";
+import {
+  fetchLogos, createLogo, updateLogo, deleteLogo,
+  fetchCategories, createCategory, deleteCategory, updateCategory,
+  fetchGovernorates, createGovernorate, deleteGovernorate, updateGovernorate,
+} from "@/lib/logos";
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/png", "image/svg+xml", "image/jpeg", "image/webp"];
 
 const Admin = () => {
-  const [logos, setLogos] = useState<Logo[]>(getLogos);
-  const [categories, setCategories] = useState<string[]>(getCategories);
+  const queryClient = useQueryClient();
+  const { data: logos = [] } = useQuery({ queryKey: ["logos"], queryFn: fetchLogos });
+  const { data: categories = ["الكل"] } = useQuery({ queryKey: ["categories"], queryFn: fetchCategories });
+  const { data: governorates = ["الكل"] } = useQuery({ queryKey: ["governorates"], queryFn: fetchGovernorates });
+
   const [newCategory, setNewCategory] = useState("");
+  const [newGovernorate, setNewGovernorate] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingLogo, setEditingLogo] = useState<Logo | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [logoInputMode, setLogoInputMode] = useState<string>("upload");
 
-  const [form, setForm] = useState({ name: "", category: "", url: "", logoUrl: "", description: "", featured: false, phone: "", address: "" });
+  const [form, setForm] = useState({ name: "", category: "", governorate: "القاهرة", url: "", logoUrl: "", description: "", featured: false, phone: "", address: "" });
 
   const resetForm = () => {
-    setForm({ name: "", category: "", url: "", logoUrl: "", description: "", featured: false, phone: "", address: "" });
+    setForm({ name: "", category: "", governorate: "القاهرة", url: "", logoUrl: "", description: "", featured: false, phone: "", address: "" });
     setUploadPreview(null);
     setLogoInputMode("upload");
   };
@@ -54,7 +66,7 @@ const Admin = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim() || !form.category || !form.url.trim() || !form.logoUrl.trim()) {
       toast.error("يرجى ملء جميع الحقول المطلوبة.");
       return;
@@ -65,69 +77,154 @@ const Admin = () => {
     }
 
     const sanitized = {
-      ...form,
       name: form.name.trim().slice(0, 100),
+      category: form.category,
+      governorate: form.governorate,
       url: form.url.trim(),
       logoUrl: form.logoUrl.trim(),
       description: form.description.trim().slice(0, 500),
+      featured: form.featured,
+      phone: form.phone || undefined,
+      address: form.address || undefined,
     };
 
-    let updated: Logo[];
-    if (editingLogo) {
-      updated = logos.map((l) => (l.id === editingLogo.id ? { ...l, ...sanitized } : l));
-      toast.success("تم تحديث الشعار!");
-    } else {
-      const newLogo: Logo = { ...sanitized, id: Date.now().toString() };
-      updated = [...logos, newLogo];
-      toast.success("تمت إضافة الشعار!");
+    try {
+      if (editingLogo) {
+        await updateLogo(editingLogo.id, sanitized);
+        toast.success("تم تحديث الشعار!");
+      } else {
+        await createLogo(sanitized);
+        toast.success("تمت إضافة الشعار!");
+      }
+      queryClient.invalidateQueries({ queryKey: ["logos"] });
+      setDialogOpen(false);
+      setEditingLogo(null);
+      resetForm();
+    } catch (e) {
+      toast.error("فشل الحفظ. حاول مجدداً.");
+      console.error(e);
     }
-    setLogos(updated);
-    saveLogos(updated);
-    setDialogOpen(false);
-    setEditingLogo(null);
-    resetForm();
   };
 
-  const handleDelete = (id: string) => {
-    const updated = logos.filter((l) => l.id !== id);
-    setLogos(updated);
-    saveLogos(updated);
-    toast.success("تم حذف الشعار.");
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteLogo(id);
+      queryClient.invalidateQueries({ queryKey: ["logos"] });
+      toast.success("تم حذف الشعار.");
+    } catch (e) {
+      toast.error("فشل الحذف.");
+      console.error(e);
+    }
   };
 
-  const toggleFeatured = (id: string) => {
-    const updated = logos.map((l) => (l.id === id ? { ...l, featured: !l.featured } : l));
-    setLogos(updated);
-    saveLogos(updated);
+  const toggleFeatured = async (id: string) => {
+    const logo = logos.find((l) => l.id === id);
+    if (!logo) return;
+    try {
+      await updateLogo(id, { featured: !logo.featured });
+      queryClient.invalidateQueries({ queryKey: ["logos"] });
+    } catch (e) {
+      toast.error("فشل التحديث.");
+      console.error(e);
+    }
   };
 
   const handleEdit = (logo: Logo) => {
     setEditingLogo(logo);
-    setForm({ name: logo.name, category: logo.category, url: logo.url, logoUrl: logo.logoUrl, description: logo.description, featured: logo.featured, phone: logo.phone || "", address: logo.address || "" });
+    setForm({ name: logo.name, category: logo.category, governorate: logo.governorate, url: logo.url, logoUrl: logo.logoUrl, description: logo.description, featured: logo.featured, phone: logo.phone || "", address: logo.address || "" });
     setUploadPreview(logo.logoUrl.startsWith("data:") ? logo.logoUrl : null);
     setLogoInputMode(logo.logoUrl.startsWith("data:") ? "upload" : "url");
     setDialogOpen(true);
   };
 
-  const addCategory = () => {
+  const addCategory = async () => {
     const trimmed = newCategory.trim().slice(0, 50);
     if (!trimmed || categories.includes(trimmed)) return;
-    const updated = [...categories, trimmed];
-    setCategories(updated);
-    saveCategories(updated);
-    setNewCategory("");
-    toast.success("تمت إضافة التصنيف!");
+    try {
+      await createCategory(trimmed);
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      setNewCategory("");
+      toast.success("تمت إضافة التصنيف!");
+    } catch (e) {
+      toast.error("فشل إضافة التصنيف.");
+      console.error(e);
+    }
   };
 
-  const removeCategory = (cat: string) => {
+  const removeCategory = async (cat: string) => {
     if (cat === "الكل") return;
-    const updated = categories.filter((c) => c !== cat);
-    setCategories(updated);
-    saveCategories(updated);
-    toast.success("تم حذف التصنيف.");
+    try {
+      await deleteCategory(cat);
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      toast.success("تم حذف التصنيف.");
+    } catch (e) {
+      toast.error("فشل حذف التصنيف.");
+      console.error(e);
+    }
+  };
+
+  const editCategory = async (oldCat: string) => {
+    if (oldCat === "الكل") return;
+    const newCat = window.prompt("تعديل التصنيف:", oldCat);
+    if (!newCat) return;
+    const trimmed = newCat.trim().slice(0, 50);
+    if (!trimmed || trimmed === oldCat || categories.includes(trimmed)) return;
+    try {
+      await updateCategory(oldCat, trimmed);
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: ["logos"] });
+      toast.success("تم تعديل التصنيف.");
+    } catch (e) {
+      toast.error("فشل تعديل التصنيف.");
+      console.error(e);
+    }
+  };
+
+  const addGovernorate = async () => {
+    const trimmed = newGovernorate.trim().slice(0, 50);
+    if (!trimmed || governorates.includes(trimmed)) return;
+    try {
+      await createGovernorate(trimmed);
+      queryClient.invalidateQueries({ queryKey: ["governorates"] });
+      setNewGovernorate("");
+      toast.success("تمت إضافة المحافظة!");
+    } catch (e) {
+      toast.error("فشل إضافة المحافظة.");
+      console.error(e);
+    }
+  };
+
+  const removeGovernorate = async (gov: string) => {
+    if (gov === "الكل") return;
+    try {
+      await deleteGovernorate(gov);
+      queryClient.invalidateQueries({ queryKey: ["governorates"] });
+      toast.success("تم حذف المحافظة.");
+    } catch (e) {
+      toast.error("فشل حذف المحافظة.");
+      console.error(e);
+    }
+  };
+
+  const editGovernorate = async (oldGov: string) => {
+    if (oldGov === "الكل") return;
+    const newGov = window.prompt("تعديل المحافظة:", oldGov);
+    if (!newGov) return;
+    const trimmed = newGov.trim().slice(0, 50);
+    if (!trimmed || trimmed === oldGov || governorates.includes(trimmed)) return;
+    try {
+      await updateGovernorate(oldGov, trimmed);
+      queryClient.invalidateQueries({ queryKey: ["governorates"] });
+      queryClient.invalidateQueries({ queryKey: ["logos"] });
+      toast.success("تم تعديل المحافظة.");
+    } catch (e) {
+      toast.error("فشل تعديل المحافظة.");
+      console.error(e);
+    }
   };
 
   const nonAllCategories = categories.filter((c) => c !== "الكل");
+  const nonAllGovernorates = governorates.filter((g) => g !== "الكل");
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">
@@ -140,6 +237,7 @@ const Admin = () => {
               const data = logos.map((l) => ({
                 "الاسم": l.name,
                 "القسم": l.category,
+                "المحافظة": l.governorate,
                 "رقم الموبايل": l.phone || "",
                 "العنوان": l.address || "",
                 "رابط الموقع": l.url,
@@ -147,7 +245,7 @@ const Admin = () => {
               const ws = XLSX.utils.json_to_sheet(data);
               const wb = XLSX.utils.book_new();
               XLSX.utils.book_append_sheet(wb, ws, "الشعارات");
-              ws["!cols"] = [{ wch: 20 }, { wch: 15 }, { wch: 18 }, { wch: 30 }, { wch: 35 }];
+              ws["!cols"] = [{ wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 18 }, { wch: 30 }, { wch: 35 }];
               XLSX.writeFile(wb, "logos_export.xlsx");
               toast.success("تم تصدير البيانات بنجاح!");
             }}>
@@ -172,6 +270,15 @@ const Admin = () => {
                     <SelectTrigger><SelectValue placeholder="اختر التصنيف" /></SelectTrigger>
                     <SelectContent>
                       {nonAllCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>المحافظة *</Label>
+                  <Select value={form.governorate} onValueChange={(v) => setForm({ ...form, governorate: v })}>
+                    <SelectTrigger><SelectValue placeholder="اختر المحافظة" /></SelectTrigger>
+                    <SelectContent>
+                      {nonAllGovernorates.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -244,7 +351,6 @@ const Admin = () => {
           </div>
         </div>
 
-        {/* Categories Management */}
         <div className="mb-10 p-6 bg-card rounded-xl border border-border">
           <h2 className="text-lg font-semibold mb-4">التصنيفات</h2>
           <div className="flex flex-wrap gap-2 mb-4">
@@ -252,16 +358,44 @@ const Admin = () => {
               <span key={cat} className="category-pill category-pill-inactive flex items-center gap-1.5">
                 {cat}
                 {cat !== "الكل" && (
-                  <button onClick={() => removeCategory(cat)} className="text-destructive hover:text-destructive/80">
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => editCategory(cat)} className="text-muted-foreground hover:text-foreground">
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button onClick={() => removeCategory(cat)} className="text-destructive hover:text-destructive/80">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2 mb-8">
+            <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="تصنيف جديد" className="max-w-xs" maxLength={50} onKeyDown={(e) => e.key === "Enter" && addCategory()} />
+            <Button variant="outline" onClick={addCategory}>إضافة</Button>
+          </div>
+
+          <h2 className="text-lg font-semibold mb-4">المحافظات</h2>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {governorates.map((gov) => (
+              <span key={gov} className="category-pill category-pill-inactive flex items-center gap-1.5">
+                {gov}
+                {gov !== "الكل" && (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => editGovernorate(gov)} className="text-muted-foreground hover:text-foreground">
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button onClick={() => removeGovernorate(gov)} className="text-destructive hover:text-destructive/80">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 )}
               </span>
             ))}
           </div>
           <div className="flex gap-2">
-            <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="تصنيف جديد" className="max-w-xs" maxLength={50} onKeyDown={(e) => e.key === "Enter" && addCategory()} />
-            <Button variant="outline" onClick={addCategory}>إضافة</Button>
+            <Input value={newGovernorate} onChange={(e) => setNewGovernorate(e.target.value)} placeholder="محافظة جديدة" className="max-w-xs" maxLength={50} onKeyDown={(e) => e.key === "Enter" && addGovernorate()} />
+            <Button variant="outline" onClick={addGovernorate}>إضافة</Button>
           </div>
         </div>
 
@@ -274,6 +408,7 @@ const Admin = () => {
                   <th className="text-right p-4 font-medium text-muted-foreground">الشعار</th>
                   <th className="text-right p-4 font-medium text-muted-foreground">الاسم</th>
                   <th className="text-right p-4 font-medium text-muted-foreground hidden sm:table-cell">التصنيف</th>
+                  <th className="text-right p-4 font-medium text-muted-foreground hidden sm:table-cell">المحافظة</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">الإجراءات</th>
                 </tr>
               </thead>
@@ -285,6 +420,7 @@ const Admin = () => {
                     </td>
                     <td className="p-4 font-medium">{logo.name}</td>
                     <td className="p-4 text-muted-foreground hidden sm:table-cell">{logo.category}</td>
+                    <td className="p-4 text-muted-foreground hidden sm:table-cell">{logo.governorate}</td>
                     <td className="p-4">
                       <div className="flex items-center justify-start gap-1">
                         <Button variant="ghost" size="icon" onClick={() => toggleFeatured(logo.id)} title={logo.featured ? "إلغاء التمييز" : "تمييز"}>
